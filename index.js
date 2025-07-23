@@ -2,7 +2,8 @@
 import bot from 'node-autoit-koffi';
 import { createServer } from 'node:http';
 import qs from 'node:querystring';
-import pkg from './package.json' assert { type: 'json' };
+import { setTimeout } from 'node:timers/promises';
+import pkg from './package.json' with { type: 'json' };
 
 const host = `127.0.0.1`; // bind the server to the loopback interface so we don't expose it
 const port = Number(process.env.SERVER_PORT) || 3000;
@@ -75,11 +76,6 @@ server.listen(port, host, () => {
 	console.log(`Server running at http://${host}:${port}`);
 });
 
-/** @param {number} ms */
-function delay(ms) {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function run_bot({ username, password, card_number, exit, wait }) {
 	// open or activate the application window
 	const already_open = await bot.winExists(fp_win_title);
@@ -116,7 +112,7 @@ async function run_bot({ username, password, card_number, exit, wait }) {
 		await bot.mouseMove(left + 223, top + 179, 0);
 		await bot.mouseClick('left');
 
-		await delay(1000);
+		await setTimeout(1000);
 
 		// clear and enter the username
 		await bot.send('^a');
@@ -133,7 +129,7 @@ async function run_bot({ username, password, card_number, exit, wait }) {
 		// hit enter key for login
 		await bot.send('{ENTER}');
 
-		await delay(+wait || 3_593);
+		await setTimeout(+wait || 3_593);
 	}
 
 	// send card number
