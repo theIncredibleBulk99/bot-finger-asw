@@ -17,6 +17,10 @@ const port = Number(process.env.SERVER_PORT) || 3000;
 const fp_win_title = process.env.FP_WIN_TITLE || 'Aplikasi Registrasi Sidik Jari';
 const fp_ins_path = process.env.FP_INS_PATH || 'C:\\Program Files (x86)\\BPJS Kesehatan\\Aplikasi Sidik Jari BPJS Kesehatan\\After.exe';
 
+// flag standar AutoIt untuk WinSetState; node-autoit-koffi tidak punya
+// fungsi "winMinimize" tersendiri, jadi minimize dilakukan lewat winSetState.
+const SW_MINIMIZE = 6;
+
 const server = createServer((req, res) => {
 	// allow cors
 	res.setHeader('Access-Control-Allow-Origin', '*');
@@ -95,7 +99,7 @@ async function minimize_bot() {
 	if (!already_open) {
 		throw new Error(`Aplikasi sidik jari belum terbuka`);
 	}
-	await bot.winMinimize(fp_win_title);
+	await bot.winSetState(fp_win_title, '', SW_MINIMIZE);
 }
 
 async function run_bot({ username, password, card_number, exit, minimize, wait }) {
@@ -137,13 +141,13 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 
 		await bot.send('^a');
 		await bot.send('{BACKSPACE}');
-		await bot.send(username);
+		await bot.send(username.toUpperCase());
 
 		await bot.send('{TAB}');
 
 		await bot.send('^a');
 		await bot.send('{BACKSPACE}');
-		await bot.send(password);
+		await bot.send(password.toUpperCase());
 
 		await bot.send('{ENTER}'); // login
 
@@ -157,6 +161,6 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 	if (exit) {
 		await bot.winWaitClose(fp_win_title); // tunggu sampai window ditutup manual
 	} else if (minimize) {
-		await bot.winMinimize(fp_win_title); // minimize supaya tidak mengganggu layar APM
+		await bot.winSetState(fp_win_title, '', SW_MINIMIZE); // minimize supaya tidak mengganggu layar APM
 	}
 }
