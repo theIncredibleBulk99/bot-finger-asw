@@ -15,12 +15,13 @@ const bot =
 const host = `127.0.0.1`; // bind the server to the loopback interface so we don't expose it
 const port = Number(process.env.SERVER_PORT) || 3000;
 const fp_win_title = process.env.FP_WIN_TITLE || 'Aplikasi Registrasi Sidik Jari';
-const fp_ins_path = process.env.FP_INS_PATH || 'C:\\Program Files (x86)\\BPJS Kesehatan\\Aplikasi Sidik Jari BPJS Kesehatan\\After.exe';
+const fp_ins_path = process.env.FP_INS_PATH || 'C:\\Program Files (x86)\\Aplikasi Sidik Jari BPJS Kesehatan\\After.exe';
 
 // flag standar AutoIt untuk WinSetState; node-autoit-koffi tidak punya
 // fungsi "winMinimize" tersendiri, jadi minimize/hide dilakukan lewat winSetState.
 const SW_HIDE = 0; // window benar-benar hilang, termasuk dari taskbar (bukan exit, proses tetap jalan)
 const SW_MINIMIZE = 6; // window diminimize, masih ada ikonnya di taskbar
+const SW_RESTORE = 9; // kembalikan window ke kondisi normal & terlihat, dari hidden ATAU minimized
 
 // mode "raw" untuk bot.send(): karakter spesial AutoIt (! + ^ { } dst) dikirim
 // apa adanya, tidak diinterpretasikan sebagai kombinasi tombol (ALT/SHIFT/CTRL/dst)
@@ -63,7 +64,11 @@ const server = createServer((req, res) => {
 				const password = form_data['password'];
 				const card_number = form_data['card_number'];
 				const exit = form_data['exit'] === 'true';
-				const minimize = form_data['minimize'] === 'true';
+				// default-nya TRUE: window otomatis disembunyikan lagi setelah nomor
+				// kartu masuk, kecuali eksplisit dimatikan dengan minimize=false.
+				// Ini penting untuk kiosk fullscreen tab biasa (bukan --kiosk), supaya
+				// window fingerprint nggak lama-lama nongol di atas fullscreen.
+				const minimize = form_data['minimize'] !== 'false';
 				const wait = form_data['wait'];
 
 				if (!username || !password || !card_number) {
@@ -119,6 +124,10 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 		await bot.winWait(fp_win_title); // tunggu window muncul
 	}
 
+	// winActivate TIDAK otomatis membatalkan SW_HIDE/SW_MINIMIZE (ini beda dari
+	// visibility window di level Windows), jadi kita paksa restore dulu supaya
+	// window yang sempat disembunyikan pasti muncul lagi.
+	await bot.winSetState(fp_win_title, '', SW_RESTORE);
 	await bot.winActivate(fp_win_title); // pastikan window aktif/fokus
 	await bot.winWaitActive(fp_win_title);
 
