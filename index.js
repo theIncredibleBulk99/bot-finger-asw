@@ -27,6 +27,21 @@ const SW_RESTORE = 9; // kembalikan window ke kondisi normal & terlihat, dari hi
 // apa adanya, tidak diinterpretasikan sebagai kombinasi tombol (ALT/SHIFT/CTRL/dst)
 const RAW_MODE = 1;
 
+// =============================================================
+// PENGAMAN LEVEL PROSES
+// Tanpa ini, error tak terduga (mis. exception di luar try/catch,
+// atau promise yang reject tanpa .catch) akan dianggap "uncaught"
+// oleh Node.js dan LANGSUNG mematikan seluruh proses (server ikut
+// mati). Dengan handler ini, error hanya di-log, proses tetap hidup.
+// =============================================================
+process.on('uncaughtException', (err) => {
+	console.error('[uncaughtException]', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+	console.error('[unhandledRejection]', reason);
+});
+
 const server = createServer((req, res) => {
 	// allow cors
 	res.setHeader('Access-Control-Allow-Origin', '*');
@@ -44,10 +59,28 @@ const server = createServer((req, res) => {
 	 * @param {any =} data
 	 */
 	function json(status, data) {
+		if (res.headersSent || res.writableEnded) return;
 		res.writeHead(status, { 'Content-Type': 'application/json' });
 		if (!data) return res.end();
 		res.end(JSON.stringify(data));
 	}
+
+	// =============================================================
+	// PENYEBAB UTAMA "node exit sendiri":
+	// Stream request (req) tidak punya listener 'error'. Kalau koneksi
+	// terputus di tengah jalan (tab kiosk di-refresh/ditutup, fetch
+	// di-abort, timeout jaringan, dsb), req memancarkan event 'error'.
+	// Tanpa listener, Node.js menganggapnya uncaught exception dan
+	// MEMATIKAN SELURUH PROSES. Listener di bawah ini mencegah itu.
+	// =============================================================
+	req.on('error', (err) => {
+		console.error('Request error:', err);
+		json(400, { message: `Request error: ${err.message}` });
+	});
+
+	res.on('error', (err) => {
+		console.error('Response error:', err);
+	});
 
 	try {
 		const url = new URL(req.url || '/', `http://${host}`);
@@ -59,27 +92,31 @@ const server = createServer((req, res) => {
 			let body = '';
 			req.on('data', (chunk) => (body += chunk.toString()));
 			req.on('end', () => {
-				const form_data = qs.parse(body);
-				const username = form_data['username'];
-				const password = form_data['password'];
-				const card_number = form_data['card_number'];
-				const exit = form_data['exit'] === 'true';
-				// default-nya TRUE: window otomatis disembunyikan lagi setelah nomor
-				// kartu masuk, kecuali eksplisit dimatikan dengan minimize=false.
-				// Ini penting untuk kiosk fullscreen tab biasa (bukan --kiosk), supaya
-				// window fingerprint nggak lama-lama nongol di atas fullscreen.
-				const minimize = form_data['minimize'] !== 'false';
-				const wait = form_data['wait'];
+				try {
+					const form_data = qs.parse(body);
+					const username = form_data['username'];
+					const password = form_data['password'];
+					const card_number = form_data['card_number'];
+					const exit = form_data['exit'] === 'true';
+					// default-nya TRUE: window otomatis disembunyikan lagi setelah nomor
+					// kartu masuk, kecuali eksplisit dimatikan dengan minimize=false.
+					// Ini penting untuk kiosk fullscreen tab biasa (bukan --kiosk), supaya
+					// window fingerprint nggak lama-lama nongol di atas fullscreen.
+					const minimize = form_data['minimize'] !== 'false';
+					const wait = form_data['wait'];
 
-				if (!username || !password || !card_number) {
-					return json(400, {
-						message: `username, password, and card_number are required fields`
-					});
+					if (!username || !password || !card_number) {
+						return json(400, {
+							message: `username, password, and card_number are required fields`
+						});
+					}
+
+					run_bot({ username, password, card_number, exit, minimize, wait })
+						.then(() => json(201))
+						.catch((e) => handle_error(e));
+				} catch (error) {
+					handle_error(/** @type {Error} */ (error));
 				}
-
-				run_bot({ username, password, card_number, exit, minimize, wait })
-					.then(() => json(201))
-					.catch((e) => handle_error(e));
 			});
 		} else if (url.pathname === '/minimize' && req.method === 'POST') {
 			// minimize window aplikasi sidik jari, bisa dipanggil kapan saja dari webapp
@@ -90,13 +127,21 @@ const server = createServer((req, res) => {
 			json(404, { message: `Not found` });
 		}
 	} catch (error) {
-		handle_error(error);
+		handle_error(/** @type {Error} */ (error));
 	}
 });
 
 server.on('error', (err) => {
 	// might to try restarting the server or take other actions
 	console.error('Server error:', err);
+});
+
+// jaga-jaga kalau ada koneksi TCP yang bermasalah sebelum sempat jadi request
+server.on('clientError', (err, socket) => {
+	console.error('Client error:', err);
+	if (socket.writable) {
+		socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+	}
 });
 
 server.listen(port, host, () => {
