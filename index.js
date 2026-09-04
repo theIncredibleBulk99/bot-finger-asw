@@ -67,6 +67,11 @@ const server = createServer((req, res) => {
 					.then(() => json(201))
 					.catch((e) => handle_error(e));
 			});
+		} else if (url.pathname === '/minimize' && req.method === 'POST') {
+			// minimize window aplikasi sidik jari, bisa dipanggil kapan saja dari webapp
+			minimize_bot()
+				.then(() => json(200, { message: `Window minimized` }))
+				.catch((e) => handle_error(e));
 		} else {
 			json(404, { message: `Not found` });
 		}
@@ -83,6 +88,15 @@ server.on('error', (err) => {
 server.listen(port, host, () => {
 	console.log(`Server running at http://${host}:${port}`);
 });
+
+/** dipanggil lewat POST /minimize, terpisah dari alur login/isi kartu */
+async function minimize_bot() {
+	const already_open = await bot.winExists(fp_win_title);
+	if (!already_open) {
+		throw new Error(`Aplikasi sidik jari belum terbuka`);
+	}
+	await bot.winMinimize(fp_win_title);
+}
 
 async function run_bot({ username, password, card_number, exit, minimize, wait }) {
 	// 1) deteksi apakah aplikasi sudah terbuka sebelumnya
