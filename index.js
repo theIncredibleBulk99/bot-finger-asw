@@ -150,13 +150,13 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 		await bot.send('{BACKSPACE}');
 		// mode raw (1): karakter spesial seperti ! + ^ { } dikirim apa adanya,
 		// tidak dianggap sebagai kombinasi tombol ALT/SHIFT/CTRL/dst
-		await bot.send(username.toUpperCase(), RAW_MODE);
+		await bot.send(username, RAW_MODE);
 
 		await bot.send('{TAB}');
 
 		await bot.send('^a');
 		await bot.send('{BACKSPACE}');
-		await bot.send(password.toUpperCase(), RAW_MODE);
+		await bot.send(password, RAW_MODE);
 
 		await bot.send('{ENTER}'); // login
 
