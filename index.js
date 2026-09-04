@@ -27,13 +27,8 @@ const SW_RESTORE = 9; // kembalikan window ke kondisi normal & terlihat, dari hi
 // apa adanya, tidak diinterpretasikan sebagai kombinasi tombol (ALT/SHIFT/CTRL/dst)
 const RAW_MODE = 1;
 
-// =============================================================
-// PENGAMAN LEVEL PROSES
-// Tanpa ini, error tak terduga (mis. exception di luar try/catch,
-// atau promise yang reject tanpa .catch) akan dianggap "uncaught"
-// oleh Node.js dan LANGSUNG mematikan seluruh proses (server ikut
-// mati). Dengan handler ini, error hanya di-log, proses tetap hidup.
-// =============================================================
+let bot_busy = false;
+
 process.on('uncaughtException', (err) => {
 	console.error('[uncaughtException]', err);
 });
@@ -111,15 +106,30 @@ const server = createServer((req, res) => {
 						});
 					}
 
+					// >>> CEK LOCK DI SINI <<<
+					if (bot_busy) {
+						return json(409, {
+							message: `Bot sedang memproses request lain, coba lagi sebentar`
+						});
+					}
+
+					bot_busy = true;
 					run_bot({ username, password, card_number, exit, minimize, wait })
 						.then(() => json(201))
-						.catch((e) => handle_error(e));
+						.catch((e) => handle_error(e))
+						.finally(() => {
+							bot_busy = false;
+						});
 				} catch (error) {
 					handle_error(/** @type {Error} */ (error));
 				}
 			});
 		} else if (url.pathname === '/minimize' && req.method === 'POST') {
 			// minimize window aplikasi sidik jari, bisa dipanggil kapan saja dari webapp
+			if (bot_busy) {
+				json(409, { message: `Bot sedang memproses request lain, coba lagi sebentar` });
+				return;
+			}
 			minimize_bot()
 				.then(() => json(200, { message: `Window minimized` }))
 				.catch((e) => handle_error(e));
