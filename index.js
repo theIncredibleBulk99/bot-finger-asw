@@ -18,8 +18,13 @@ const fp_win_title = process.env.FP_WIN_TITLE || 'Aplikasi Registrasi Sidik Jari
 const fp_ins_path = process.env.FP_INS_PATH || 'C:\\Program Files (x86)\\BPJS Kesehatan\\Aplikasi Sidik Jari BPJS Kesehatan\\After.exe';
 
 // flag standar AutoIt untuk WinSetState; node-autoit-koffi tidak punya
-// fungsi "winMinimize" tersendiri, jadi minimize dilakukan lewat winSetState.
-const SW_MINIMIZE = 6;
+// fungsi "winMinimize" tersendiri, jadi minimize/hide dilakukan lewat winSetState.
+const SW_HIDE = 0; // window benar-benar hilang, termasuk dari taskbar (bukan exit, proses tetap jalan)
+const SW_MINIMIZE = 6; // window diminimize, masih ada ikonnya di taskbar
+
+// mode "raw" untuk bot.send(): karakter spesial AutoIt (! + ^ { } dst) dikirim
+// apa adanya, tidak diinterpretasikan sebagai kombinasi tombol (ALT/SHIFT/CTRL/dst)
+const RAW_MODE = 1;
 
 const server = createServer((req, res) => {
 	// allow cors
@@ -93,13 +98,15 @@ server.listen(port, host, () => {
 	console.log(`Server running at http://${host}:${port}`);
 });
 
-/** dipanggil lewat POST /minimize, terpisah dari alur login/isi kartu */
+/** dipanggil lewat POST /minimize, terpisah dari alur login/isi kartu.
+ *  Pakai SW_HIDE supaya window benar-benar hilang (tidak muncul di taskbar
+ *  juga), tapi proses aplikasinya tetap berjalan (bukan exit/close). */
 async function minimize_bot() {
 	const already_open = await bot.winExists(fp_win_title);
 	if (!already_open) {
 		throw new Error(`Aplikasi sidik jari belum terbuka`);
 	}
-	await bot.winSetState(fp_win_title, '', SW_MINIMIZE);
+	await bot.winSetState(fp_win_title, '', SW_HIDE);
 }
 
 async function run_bot({ username, password, card_number, exit, minimize, wait }) {
@@ -141,13 +148,15 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 
 		await bot.send('^a');
 		await bot.send('{BACKSPACE}');
-		await bot.send(username.toUpperCase());
+		// mode raw (1): karakter spesial seperti ! + ^ { } dikirim apa adanya,
+		// tidak dianggap sebagai kombinasi tombol ALT/SHIFT/CTRL/dst
+		await bot.send(username.toUpperCase(), RAW_MODE);
 
 		await bot.send('{TAB}');
 
 		await bot.send('^a');
 		await bot.send('{BACKSPACE}');
-		await bot.send(password.toUpperCase());
+		await bot.send(password.toUpperCase(), RAW_MODE);
 
 		await bot.send('{ENTER}'); // login
 
@@ -155,12 +164,12 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 	}
 
 	// 2) masukkan nomor kartu (berlaku untuk kedua kondisi di atas)
-	await bot.send(card_number);
+	await bot.send(card_number, RAW_MODE);
 
 	// 3) tutup atau minimize window sesuai permintaan
 	if (exit) {
 		await bot.winWaitClose(fp_win_title); // tunggu sampai window ditutup manual
 	} else if (minimize) {
-		await bot.winSetState(fp_win_title, '', SW_MINIMIZE); // minimize supaya tidak mengganggu layar APM
+		await bot.winSetState(fp_win_title, '', SW_HIDE); // sembunyikan total, tapi proses tetap jalan (bukan exit)
 	}
 }
