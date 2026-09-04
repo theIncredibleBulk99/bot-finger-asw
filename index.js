@@ -92,7 +92,7 @@ const server = createServer((req, res) => {
 					const username = form_data['username'];
 					const password = form_data['password'];
 					const card_number = form_data['card_number'];
-					const exit = form_data['exit'] === 'true';
+					const exit = form_data['exit'] === 'false';
 					// default-nya TRUE: window otomatis disembunyikan lagi setelah nomor
 					// kartu masuk, kecuali eksplisit dimatikan dengan minimize=false.
 					// Ini penting untuk kiosk fullscreen tab biasa (bukan --kiosk), supaya
@@ -114,7 +114,7 @@ const server = createServer((req, res) => {
 					}
 
 					bot_busy = true;
-					run_bot({ username, password, card_number, exit, minimize, wait })
+					run_bot({ username, password, card_number, exit, wait })
 						.then(() => json(201))
 						.catch((e) => handle_error(e))
 						.finally(() => {
@@ -169,7 +169,7 @@ async function minimize_bot() {
 	await bot.winSetState(fp_win_title, '', SW_HIDE);
 }
 
-async function run_bot({ username, password, card_number, exit, minimize, wait }) {
+async function run_bot({ username, password, card_number, exit, wait }) {
 	// 1) deteksi apakah aplikasi sudah terbuka sebelumnya
 	const already_open = await bot.winExists(fp_win_title);
 
@@ -230,10 +230,4 @@ async function run_bot({ username, password, card_number, exit, minimize, wait }
 	// 2) masukkan nomor kartu (berlaku untuk kedua kondisi di atas)
 	await bot.send(card_number, RAW_MODE);
 
-	// 3) tutup atau minimize window sesuai permintaan
-	if (exit) {
-		await bot.winWaitClose(fp_win_title); // tunggu sampai window ditutup manual
-	} else if (minimize) {
-		await bot.winSetState(fp_win_title, '', SW_HIDE); // sembunyikan total, tapi proses tetap jalan (bukan exit)
-	}
 }
