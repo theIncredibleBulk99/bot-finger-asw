@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import qs from 'node:querystring';
 import { setTimeout } from 'node:timers/promises';
 import pkg from './package.json' with { type: 'json' };
+import 'dotenv/config';
 
 // Di Windows pakai library asli (kontrol GUI beneran).
 // Di OS lain (mis. Ubuntu saat development) otomatis pakai mock supaya
