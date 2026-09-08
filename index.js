@@ -17,6 +17,10 @@ const port = Number(process.env.SERVER_PORT) || 3000;
 const fp_win_title = process.env.FP_WIN_TITLE || 'Aplikasi Registrasi Sidik Jari';
 const fp_ins_path = process.env.FP_INS_PATH || 'C:\\Program Files (x86)\\Aplikasi Sidik Jari BPJS Kesehatan\\After.exe';
 
+const central_api_url = process.env.CENTRAL_API_URL || 'https://192.168.5.159/api/anjungan/getPassword';
+const anjungan_api_key = process.env.ANJUNGAN_API_KEY || '';
+const cred_refresh_ms = Number(process.env.CRED_REFRESH_MS) || 10 * 60 * 1000; // default 10 menit
+
 // flag standar AutoIt untuk WinSetState; node-autoit-koffi tidak punya
 // fungsi "winMinimize" tersendiri, jadi minimize/hide dilakukan lewat winSetState.
 const SW_HIDE = 0; // window benar-benar hilang, termasuk dari taskbar (bukan exit, proses tetap jalan)
@@ -29,6 +33,8 @@ const RAW_MODE = 1;
 
 let bot_busy = false;
 
+let creds = { username: null, password: null };
+
 process.on('uncaughtException', (err) => {
 	console.error('[uncaughtException]', err);
 });
@@ -36,6 +42,32 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
 	console.error('[unhandledRejection]', reason);
 });
+
+
+async function loadCredentials() {
+	try {
+		const res = await fetch(central_api_url, {
+			method: 'GET',
+			headers: { 'X-Api-Key': anjungan_api_key }
+		});
+
+		if (!res.ok) {
+			console.error(`[loadCredentials] HTTP ${res.status} saat ambil kredensial`);
+			return;
+		}
+
+		const data = await res.json();
+		if (!data.username || !data.password) {
+			console.error('[loadCredentials] Response tidak lengkap, kredensial tidak diupdate');
+			return;
+		}
+
+		creds = { username: data.username, password: data.password };
+		console.log('[loadCredentials] Kredensial berhasil diperbarui');
+	} catch (error) {
+		console.error('[loadCredentials] Gagal ambil kredensial:', error);
+	}
+}
 
 const server = createServer((req, res) => {
 	// allow cors
@@ -60,14 +92,6 @@ const server = createServer((req, res) => {
 		res.end(JSON.stringify(data));
 	}
 
-	// =============================================================
-	// PENYEBAB UTAMA "node exit sendiri":
-	// Stream request (req) tidak punya listener 'error'. Kalau koneksi
-	// terputus di tengah jalan (tab kiosk di-refresh/ditutup, fetch
-	// di-abort, timeout jaringan, dsb), req memancarkan event 'error'.
-	// Tanpa listener, Node.js menganggapnya uncaught exception dan
-	// MEMATIKAN SELURUH PROSES. Listener di bawah ini mencegah itu.
-	// =============================================================
 	req.on('error', (err) => {
 		console.error('Request error:', err);
 		json(400, { message: `Request error: ${err.message}` });
@@ -89,24 +113,25 @@ const server = createServer((req, res) => {
 			req.on('end', () => {
 				try {
 					const form_data = qs.parse(body);
-					const username = form_data['username'];
-					const password = form_data['password'];
+					const username = creds.username;
+					const password = creds.password;
 					const card_number = form_data['card_number'];
 					const exit = form_data['exit'] === 'false';
-					// default-nya TRUE: window otomatis disembunyikan lagi setelah nomor
-					// kartu masuk, kecuali eksplisit dimatikan dengan minimize=false.
-					// Ini penting untuk kiosk fullscreen tab biasa (bukan --kiosk), supaya
-					// window fingerprint nggak lama-lama nongol di atas fullscreen.
-					const minimize = form_data['minimize'] !== 'false';
 					const wait = form_data['wait'];
 
-					if (!username || !password || !card_number) {
-						return json(400, {
-							message: `username, password, and card_number are required fields`
+					if (!username || !password) {
+						return json(503, {
+							message: `Kredensial anjungan belum tersedia, coba lagi sebentar`
 						});
 					}
 
-					// >>> CEK LOCK DI SINI <<<
+					if (!card_number) {
+						return json(400, {
+							message: `card_number is a required field`
+						});
+					}
+
+					// >>> CEK LOCK DI SINI <
 					if (bot_busy) {
 						return json(409, {
 							message: `Bot sedang memproses request lain, coba lagi sebentar`
@@ -153,6 +178,9 @@ server.on('clientError', (err, socket) => {
 		socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
 	}
 });
+
+await loadCredentials();
+setInterval(() => loadCredentials(), cred_refresh_ms);
 
 server.listen(port, host, () => {
 	console.log(`Server running at http://${host}:${port}`);
@@ -229,5 +257,4 @@ async function run_bot({ username, password, card_number, exit, wait }) {
 
 	// 2) masukkan nomor kartu (berlaku untuk kedua kondisi di atas)
 	await bot.send(card_number, RAW_MODE);
-
 }
